@@ -1,0 +1,27 @@
+.env
+.env.*
+!.env.example
+.gocache/
+data/marksheets/
+*.exe
+*.test
+*.out
+
+# build artifacts
+/bin/
+/dist/
+sli-backend
+
+# vendored deps (not used - pgx/chi are downloaded via go mod)
+/vendor/
+
+# editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# local tooling
+*.log
+tmp/

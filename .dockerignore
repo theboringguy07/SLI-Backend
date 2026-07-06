@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.example
+.gocache
+data
+*.md
+*.sql
+docs
+Dockerfile
+docker-compose.yml
+.github
+.claude
+.agents
+*.go.[0-9]*

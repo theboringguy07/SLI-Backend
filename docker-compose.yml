@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sli_db
+      POSTGRES_USER: sli
+      POSTGRES_PASSWORD: sli
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sli -d sli_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_DSN: postgres://sli:sli@postgres:5432/sli_db?sslmode=disable
+      PDF_STORAGE_PATH: /app/data/marksheets
+    ports:
+      - "8080:8080"
+    volumes:
+      - marksheets:/app/data/marksheets
+
+volumes:
+  postgres_data:
+  marksheets:

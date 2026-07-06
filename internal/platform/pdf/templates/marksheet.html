@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Somaiya Marksheet Template</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;700&family=Marcellus&display=swap" rel="stylesheet">
+
+    <style>
+        /* Brand Colors & Variables */
+        :root {
+            --power-red: #B7202E;
+            --vitality-red: #ED1C24;
+            --dark-gray: #231F20;
+            --trust-blue: #004A9C;
+            --border-color: #000000;
+        }
+
+        /* Base Styles */
+        body {
+            font-family: 'Fira Sans', Arial, sans-serif;
+            color: var(--dark-gray);
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+        }
+
+        .a4-container {
+            width: 210mm;
+            min-height: 297mm;
+            background: #ffffff;
+            padding: 40px;
+            box-sizing: border-box;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Typography */
+        h1, h2, h3, .serif-text {
+            font-family: 'Marcellus', serif;
+            margin: 0;
+            font-weight: normal;
+        }
+
+        .bold { font-weight: 700; }
+        .medium { font-weight: 500; }
+
+        /* Header Layout */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .kjsce-logo {
+            width: 320px;
+            height: auto;
+            display: block;
+        }
+
+        .trust-logo-img {
+            width: 110px;
+            height: auto;
+            display: block;
+        }
+
+        /* Titles and Meta */
+        .title-section {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .department-line {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .department-name {
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 20px;
+            display: inline-block;
+        }
+
+        .exam-title {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 6px 10px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .text-left { text-align: left; }
+
+        /* Specific Table Adjustments */
+        .info-table td {
+            font-weight: 500;
+        }
+
+        .marks-table th {
+            font-weight: 700;
+        }
+
+        .bullet-point {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        /* Freeform text areas */
+        .project-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin: 15px 0 10px;
+        }
+
+        .work-done-box {
+            border: 1px solid transparent; /* Used for spacing in the image */
+            min-height: 60px;
+            margin-bottom: 15px;
+        }
+
+        .remarks {
+            margin: 25px 0;
+            font-size: 13px;
+        }
+
+        /* Signatures */
+        .signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 60px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        /* Footer */
+        .footer-text {
+            margin-top: 30px;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .address-block {
+            margin-top: 20px;
+            font-size: 12px;
+            line-height: 1.4;
+            width: 70%;
+        }
+
+        /* Background Graphic styling mimicking Power Red shapes */
+        .bg-graphic {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 150px;
+            height: 180px;
+        }
+
+        .bg-graphic::before {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 80px;
+            height: 180px;
+            background-color: var(--power-red);
+        }
+
+        .bg-graphic::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            right: 80px;
+            width: 70px;
+            height: 60px;
+            background-color: var(--power-red);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="a4-container">
+
+        <div class="header">
+            <img src="KJSCE.svg"
+                 alt="K J Somaiya College of Engineering"
+                 class="kjsce-logo">
+
+            <img src="Trust.svg"
+                 alt="Somaiya Trust"
+                 class="trust-logo-img">
+        </div>
+
+        <div class="title-section">
+            <div class="department-line">
+                Department: <span class="department-name">{{.DepartmentName}}</span>
+            </div>
+            <div class="exam-title">Semester long Internship:
+                {{if eq .ExamType "ISE"}}In-Semester Evaluation (ISE){{else if eq .ExamType "ESE"}}End-Semester Evaluation (ESE){{else}}{{.ExamType}}{{end}}
+            </div>
+        </div>
+
+        <table class="info-table">
+            <tr>
+                <th style="width: 25%;">Roll No.</th>
+                <th style="width: 45%;">Name of the student</th>
+                <th style="width: 30%;">Signature of the student</th>
+            </tr>
+            <tr>
+                <td></td>
+                <td>{{.StudentName}}</td>
+                <td></td>
+            </tr>
+        </table>
+
+        <table class="info-table">
+            <tr>
+                <td style="width: 40%;" class="text-left"><span class="bold">Date of exam:</span> {{.EvaluationDate}}</td>
+                <td style="width: 30%;" class="text-left"><span class="bold">Student email:</span> {{.StudentEmail}}</td>
+                <td style="width: 30%;" class="text-left"><span class="bold">Venue:</span> {{.Venue}}</td>
+            </tr>
+        </table>
+
+        <div class="project-title">Internship / Company : <span style="font-weight: normal;">{{.RoleTitle}} at {{.CompanyName}}</span></div>
+        <div class="bold" style="font-size: 14px;">Work done:</div>
+        <div class="work-done-box"></div>
+
+        <table class="marks-table">
+            <tr>
+                <th rowspan="2" style="width: 5%;">Sr. No</th>
+                <th rowspan="2" style="width: 25%;">Evaluation parameter</th>
+                <th colspan="4">Total Intermediate Evaluation Max. Marks_100</th>
+                <th rowspan="2" style="width: 10%;">Marks</th>
+            </tr>
+            <tr>
+                <th style="width: 15%;">Excellent<br>(≥ 90 %)</th>
+                <th style="width: 15%;">Good<br>(70- 89 %)</th>
+                <th style="width: 15%;">Average<br>(50-69 %)</th>
+                <th style="width: 15%;">Satisfactory<br>(Up to 49 %)</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td class="text-left">Quality of report<br>(20)</td>
+                <td>{{if eq .ReportQualityBucket "excellent"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .ReportQualityBucket "good"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .ReportQualityBucket "average"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .ReportQualityBucket "satisfactory"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{.ReportQuality}}</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td class="text-left">Oral Presentation<br>(30)</td>
+                <td>{{if eq .OralPresentationBucket "excellent"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .OralPresentationBucket "good"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .OralPresentationBucket "average"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .OralPresentationBucket "satisfactory"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{.OralPresentation}}</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td class="text-left">Quality of work<br>done (15)</td>
+                <td>{{if eq .WorkQualityBucket "excellent"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .WorkQualityBucket "good"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .WorkQualityBucket "average"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .WorkQualityBucket "satisfactory"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{.WorkQuality}}</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td class="text-left">Understanding of<br>work(15)</td>
+                <td>{{if eq .UnderstandingBucket "excellent"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .UnderstandingBucket "good"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .UnderstandingBucket "average"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .UnderstandingBucket "satisfactory"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{.Understanding}}</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td class="text-left">Periodic Interaction<br>with mentor (20)</td>
+                <td>{{if eq .PeriodicInteractionBucket "excellent"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .PeriodicInteractionBucket "good"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .PeriodicInteractionBucket "average"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{if eq .PeriodicInteractionBucket "satisfactory"}}<span class="bullet-point">&#9679;</span>{{end}}</td>
+                <td>{{.PeriodicInteraction}}</td>
+            </tr>
+            <tr>
+                <td colspan="6" style="text-align: right;" class="bold">Total Marks (out of 100)</td>
+                <td class="bold">{{.TotalMarks}}</td>
+            </tr>
+        </table>
+
+        <div class="remarks">
+            Specific Remarks of the examiners: <span style="font-weight: 500;">{{.Remarks}}</span>
+        </div>
+
+        <div class="signatures">
+            <div>Examiner / Expert</div>
+            <div>{{.FacultyMentorName}}<br>Examiner / Mentor</div>
+        </div>
+
+        <div class="footer-text">THIS DOCUMENT HAS BEEN AUTO-GENERATED ON {{.GeneratedAt}}</div>
+
+        <div class="address-block">
+            K J Somaiya College of Engineering<br>
+            Vidyavihar (E), Mumbai - 400 077, India<br>
+            P: (91-22) 66449191<br>
+            E: principal.engg@somaiya.edu | W: kjsce.somaiya.edu
+        </div>
+
+        <div class="bg-graphic"></div>
+
+    </div>
+
+</body>
+</html>

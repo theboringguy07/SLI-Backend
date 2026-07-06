@@ -1,0 +1,19 @@
+SLI Backend Server Progression
+
+Total estimated work: 86 hours
+
+- Setup, config, routing, logging: 6 hrs
+- Models, migrations, repositories: 10 hrs
+- OAuth, JWT, RBAC, logout: 9 hrs
+- CSRF and no-cache security: 5 hrs
+- Internship enrollment and faculty mapping: 7 hrs
+- Weekly reports and edit window: 8 hrs
+- Faculty/industry feedback: 7 hrs
+- Industry secure review links: 5 hrs
+- Email outbox and notifications: 6 hrs
+- Evaluation scheduling and locked marks: 8 hrs
+- Admin corrections and audit logs: 4 hrs
+- Marksheet PDF generation: 5 hrs
+- Dashboards, workers, Docker, verification: 6 hrs
+
+Remaining: tests, richer HOD stats, automatic role seeding.
