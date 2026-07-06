@@ -108,6 +108,16 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 // newly authenticated user. Shared by GoogleCallback and VerifyMagicLink -
 // both end in an identical "issue a session" step regardless of which login
 // method produced the user/tokens.
+//
+// SameSite=None (not Strict/Lax): the frontend and backend are deployed on
+// unrelated domains (e.g. a Netlify site + a Render service), so every
+// authenticated fetch() from the frontend is a cross-site request from the
+// browser's point of view. Strict/Lax cookies are never sent on those, which
+// otherwise shows up as a 401 "Missing authentication token" on literally
+// every request right after a successful login. None requires Secure=true,
+// which these already set. If the frontend and backend ever move onto
+// subdomains of one shared root domain (app.example.com / api.example.com),
+// that pair counts as "same-site" and this could be tightened back to Strict.
 func (h *AuthHandler) startSession(w http.ResponseWriter, userID uuid.UUID, accessToken, refreshToken string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
@@ -115,7 +125,7 @@ func (h *AuthHandler) startSession(w http.ResponseWriter, userID uuid.UUID, acce
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteNoneMode,
 		MaxAge:   3600, // 1 hour
 	})
 
@@ -125,7 +135,7 @@ func (h *AuthHandler) startSession(w http.ResponseWriter, userID uuid.UUID, acce
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteNoneMode,
 		MaxAge:   7 * 24 * 3600, // 7 days
 	})
 
@@ -198,14 +208,15 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clear cookies
+	// Clear cookies. SameSite/Secure/Path must match what startSession set,
+	// or some browsers won't recognize this as clearing the same cookie.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteNoneMode,
 		MaxAge:   -1,
 	})
 
@@ -215,7 +226,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteNoneMode,
 		MaxAge:   -1,
 	})
 	middleware.ClearCSRFToken(w)

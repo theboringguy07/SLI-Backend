@@ -54,6 +54,10 @@ func CSRF(secret string) func(http.Handler) http.Handler {
 	}
 }
 
+// SameSite=None here for the same reason as access_token/refresh_token in
+// auth_handler.go's startSession: frontend and backend live on unrelated
+// domains, so this cookie needs to survive a cross-site fetch() or the CSRF
+// check in this same file (which reads it back via r.Cookie) never sees it.
 func IssueCSRFTokenForUser(w http.ResponseWriter, userID uuid.UUID, secret []byte) string {
 	token := newCSRFToken(userID, secret)
 	http.SetCookie(w, &http.Cookie{
@@ -62,7 +66,7 @@ func IssueCSRFTokenForUser(w http.ResponseWriter, userID uuid.UUID, secret []byt
 		Path:     "/",
 		HttpOnly: false,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteNoneMode,
 		MaxAge:   7 * 24 * 3600,
 	})
 	return token
@@ -75,7 +79,7 @@ func ClearCSRFToken(w http.ResponseWriter) {
 		Path:     "/",
 		HttpOnly: false,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteNoneMode,
 		MaxAge:   -1,
 	})
 }

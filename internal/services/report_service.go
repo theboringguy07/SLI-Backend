@@ -21,9 +21,10 @@ type ReportService interface {
 	// mentor actually assigned to it (checked via assignmentRepo, the same
 	// way SubmitMarks/SetSchedule check assignment in evaluation_service.go).
 	GetReportsForInternship(ctx context.Context, facultyID uuid.UUID, internshipID uuid.UUID) ([]domain.WeeklyReport, error)
-	// ListAllReports is the coordinator/admin-facing view across every
-	// internship's reports.
-	ListAllReports(ctx context.Context, offset, limit int) ([]domain.WeeklyReport, int64, error)
+	// ListAllReportsForUser is the coordinator/admin-facing view across
+	// internships' reports - ADMIN sees every report, COORDINATOR only sees
+	// reports from students in their own department.
+	ListAllReportsForUser(ctx context.Context, requestingUserID uuid.UUID, offset, limit int) ([]domain.WeeklyReport, int64, error)
 }
 
 type reportService struct {
@@ -189,8 +190,24 @@ func (s *reportService) GetReportsForInternship(ctx context.Context, facultyID u
 	return s.reportRepo.ListByInternship(ctx, internshipID)
 }
 
-func (s *reportService) ListAllReports(ctx context.Context, offset, limit int) ([]domain.WeeklyReport, int64, error) {
-	reports, count, err := s.reportRepo.ListAll(ctx, offset, limit)
+func (s *reportService) ListAllReportsForUser(ctx context.Context, requestingUserID uuid.UUID, offset, limit int) ([]domain.WeeklyReport, int64, error) {
+	requester, err := s.userRepo.FindByID(ctx, requestingUserID)
+	if err != nil {
+		return nil, 0, errors.NewWithErr(errors.CodeInternalServer, "failed to load requesting user", err)
+	}
+
+	if requester.Role.Name == domain.RoleAdmin {
+		reports, count, err := s.reportRepo.ListAll(ctx, offset, limit)
+		if err != nil {
+			return nil, 0, errors.NewWithErr(errors.CodeInternalServer, "failed to list reports", err)
+		}
+		return reports, count, nil
+	}
+
+	if requester.Department == "" {
+		return []domain.WeeklyReport{}, 0, nil
+	}
+	reports, count, err := s.reportRepo.ListAllByDepartment(ctx, requester.Department, offset, limit)
 	if err != nil {
 		return nil, 0, errors.NewWithErr(errors.CodeInternalServer, "failed to list reports", err)
 	}

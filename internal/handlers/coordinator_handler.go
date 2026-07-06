@@ -31,15 +31,17 @@ func NewCoordinatorHandler(internshipService services.InternshipService, userRep
 }
 
 // ListReports is GET /api/coordinator/reports - every report across every
-// internship, for the coordinator's tracking view.
+// internship in the coordinator's department (ADMIN sees every department).
 func (h *CoordinatorHandler) ListReports(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value(middleware.UserClaimsKey).(*auth.JWTClaims)
+
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit == 0 {
 		limit = 100
 	}
 
-	reports, count, err := h.reportService.ListAllReports(r.Context(), offset, limit)
+	reports, count, err := h.reportService.ListAllReportsForUser(r.Context(), claims.UserID, offset, limit)
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -62,13 +64,31 @@ type facultyOption struct {
 	Department string    `json:"department,omitempty"`
 }
 
-// ListFaculty is GET /api/coordinator/faculty - every FACULTY user, for the
+// ListFaculty is GET /api/coordinator/faculty - FACULTY users, for the
 // mentor-mapping UI's assignment dropdown. COORDINATOR has no access to
 // GET /api/admin/users (ADMIN-only), so this exists as a narrower
 // COORDINATOR-accessible alternative rather than widening that endpoint's
 // RBAC (which would also expose google_sub and every other role's users).
+// A coordinator only sees faculty in their own department; ADMIN sees all.
 func (h *CoordinatorHandler) ListFaculty(w http.ResponseWriter, r *http.Request) {
-	users, err := h.userRepo.ListByRole(r.Context(), domain.RoleFaculty)
+	claims, _ := r.Context().Value(middleware.UserClaimsKey).(*auth.JWTClaims)
+
+	var users []domain.User
+	var err error
+	if claims.Role == domain.RoleAdmin {
+		users, err = h.userRepo.ListByRole(r.Context(), domain.RoleFaculty)
+	} else {
+		requester, rerr := h.userRepo.FindByID(r.Context(), claims.UserID)
+		if rerr != nil {
+			response.Error(w, r, errors.NewWithErr(errors.CodeInternalServer, "failed to load requesting user", rerr))
+			return
+		}
+		if requester.Department == "" {
+			response.JSON(w, http.StatusOK, []facultyOption{})
+			return
+		}
+		users, err = h.userRepo.ListByRoleAndDepartment(r.Context(), domain.RoleFaculty, requester.Department)
+	}
 	if err != nil {
 		response.Error(w, r, errors.NewWithErr(errors.CodeInternalServer, "failed to list faculty", err))
 		return
@@ -102,14 +122,7 @@ func (h *CoordinatorHandler) EnrollStudent(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *CoordinatorHandler) AssignFaculty(w http.ResponseWriter, r *http.Request) {
-	// Not implementing the full chi param extraction here for brevity,
-	// assuming it's available via chi.URLParam or similar.
-	// For example:
-	// studentIDStr := chi.URLParam(r, "studentID")
-	// For this code snippet, let's extract it from query or assume the service handles it.
-
-	// Real implementation using chi:
-	// studentID, err := uuid.Parse(chi.URLParam(r, "studentID"))
+	claims, _ := r.Context().Value(middleware.UserClaimsKey).(*auth.JWTClaims)
 
 	var req struct {
 		InternshipID    uuid.UUID `json:"internship_id"`
@@ -121,7 +134,7 @@ func (h *CoordinatorHandler) AssignFaculty(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	assignment, err := h.internshipService.AssignFacultyMentor(r.Context(), req.InternshipID, req.FacultyMentorID)
+	assignment, err := h.internshipService.AssignFacultyMentor(r.Context(), claims.UserID, req.InternshipID, req.FacultyMentorID)
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -151,13 +164,15 @@ func (h *CoordinatorHandler) GetInternship(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *CoordinatorHandler) ListInternships(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value(middleware.UserClaimsKey).(*auth.JWTClaims)
+
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit == 0 {
 		limit = 50
 	}
 
-	internships, count, err := h.internshipService.ListAllInternships(r.Context(), offset, limit)
+	internships, count, err := h.internshipService.ListInternshipsForUser(r.Context(), claims.UserID, offset, limit)
 	if err != nil {
 		response.Error(w, r, err)
 		return

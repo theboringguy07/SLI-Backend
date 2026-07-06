@@ -23,6 +23,10 @@ type ReportRepository interface {
 	// reports (with Internship + Internship.Student joined in, so the UI can
 	// show who each report belongs to without N+1 lookups).
 	ListAll(ctx context.Context, offset, limit int) ([]domain.WeeklyReport, int64, error)
+	// ListAllByDepartment is the department-scoped equivalent of ListAll -
+	// a coordinator should only see reports from students in their own
+	// department (see ReportService.ListAllReportsForUser).
+	ListAllByDepartment(ctx context.Context, department string, offset, limit int) ([]domain.WeeklyReport, int64, error)
 	RunInTransaction(ctx context.Context, fn func(txRepo ReportRepository) error) error
 }
 
@@ -161,6 +165,57 @@ func (r *reportRepository) ListAll(ctx context.Context, offset, limit int) ([]do
 		}
 		if department != nil {
 			student.Department = *department
+		}
+		in.Student = &student
+		rpt.Internship = &in
+		reports = append(reports, rpt)
+	}
+	return reports, count, rows.Err()
+}
+
+func (r *reportRepository) ListAllByDepartment(ctx context.Context, department string, offset, limit int) ([]domain.WeeklyReport, int64, error) {
+	var count int64
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM reports rp
+		JOIN internships i ON i.id = rp.internship_id
+		JOIN users s ON s.id = i.student_id
+		WHERE s.department = $1`, department).Scan(&count); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT `+reportCols("rp")+`, `+internshipSelectCols+`
+		FROM reports rp
+		JOIN internships i ON i.id = rp.internship_id
+		JOIN users s ON s.id = i.student_id
+		WHERE s.department = $1
+		ORDER BY rp.submitted_at DESC
+		OFFSET $2 LIMIT $3`, department, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	reports := []domain.WeeklyReport{}
+	for rows.Next() {
+		var rpt domain.WeeklyReport
+		var in domain.Internship
+		var student domain.User
+		var dept *string
+		err := rows.Scan(
+			&rpt.ID, &rpt.InternshipID, &rpt.ReportType, &rpt.WeekNumber, &rpt.Content, &rpt.Status,
+			&rpt.SubmittedAt, &rpt.EditedAt, &rpt.ApprovedAt, &rpt.ApprovedBy, &rpt.ReminderSentAt,
+			&rpt.CreatedBy, &rpt.UpdatedBy,
+			&in.ID, &in.StudentID, &in.CompanyName, &in.CompanyAddress, &in.RoleTitle, &in.IndustryMentorName,
+			&in.IndustryMentorEmail, &in.AcademicYear, &in.StartDate, &in.EndDate, &in.Status, &in.CreatedBy, &in.UpdatedBy,
+			&in.CreatedAt, &in.UpdatedAt,
+			&student.ID, &student.GoogleSub, &student.Email, &student.Name, &student.RoleID, &dept, &student.CreatedAt, &student.LastLoginAt,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+		if dept != nil {
+			student.Department = *dept
 		}
 		in.Student = &student
 		rpt.Internship = &in

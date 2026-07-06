@@ -11,7 +11,15 @@ import (
 	"github.com/sli/backend/internal/domain"
 )
 
-var ErrUserNotFound = errors.New("user not found")
+var (
+	ErrUserNotFound = errors.New("user not found")
+	// ErrCoordinatorNeedsDepartment/ErrDepartmentCoordinatorExists back the
+	// "one coordinator per department" rule, enforced here in Go (a plain
+	// SELECT against the existing department column) rather than as a DB
+	// constraint - no schema migration needed for this to take effect.
+	ErrCoordinatorNeedsDepartment  = errors.New("user must have a department set before becoming a coordinator")
+	ErrDepartmentCoordinatorExists = errors.New("this department already has a coordinator")
+)
 
 type UserRepository interface {
 	FindByGoogleSub(ctx context.Context, sub string) (*domain.User, error)
@@ -29,6 +37,10 @@ type UserRepository interface {
 	// coordinator picking a faculty mentor - callers who need "everyone with
 	// this role", not admin's paginated full user listing.
 	ListByRole(ctx context.Context, roleName domain.RoleName) ([]domain.User, error)
+	// ListByRoleAndDepartment is the department-scoped version of ListByRole -
+	// a coordinator picking a faculty mentor should only see faculty in their
+	// own department (see CoordinatorHandler.ListFaculty).
+	ListByRoleAndDepartment(ctx context.Context, roleName domain.RoleName, department string) ([]domain.User, error)
 	// UpdateProfileFields applies a partial update (only the keys present in
 	// updates, e.g. "department") to a single user row. Used by
 	// PATCH /api/admin/users/{userID} since that field isn't set anywhere
@@ -147,6 +159,34 @@ func (r *userRepository) SetRole(ctx context.Context, userID uuid.UUID, roleName
 		return err
 	}
 
+	if roleName == domain.RoleCoordinator {
+		var department *string
+		err := r.db.QueryRow(ctx, `SELECT department FROM users WHERE id = $1`, userID).Scan(&department)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrUserNotFound
+			}
+			return err
+		}
+		if department == nil || strings.TrimSpace(*department) == "" {
+			return ErrCoordinatorNeedsDepartment
+		}
+
+		var existing int
+		err = r.db.QueryRow(ctx, `
+			SELECT COUNT(*) FROM users u
+			JOIN roles r ON r.id = u.role_id
+			WHERE r.role_name = $1 AND u.department = $2 AND u.id != $3`,
+			domain.RoleCoordinator, *department, userID,
+		).Scan(&existing)
+		if err != nil {
+			return err
+		}
+		if existing > 0 {
+			return ErrDepartmentCoordinatorExists
+		}
+	}
+
 	_, err = r.db.Exec(ctx, `UPDATE users SET role_id = $1 WHERE id = $2`, role.ID, userID)
 	return err
 }
@@ -194,6 +234,25 @@ func (r *userRepository) UpdateProfileFields(ctx context.Context, userID uuid.UU
 func (r *userRepository) ListByRole(ctx context.Context, roleName domain.RoleName) ([]domain.User, error) {
 	rows, err := r.db.Query(ctx, `SELECT `+userSelectCols+` `+userSelectFrom+`
 		WHERE r.role_name = $1 ORDER BY u.display_name ASC`, roleName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := []domain.User{}
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, *user)
+	}
+	return users, rows.Err()
+}
+
+func (r *userRepository) ListByRoleAndDepartment(ctx context.Context, roleName domain.RoleName, department string) ([]domain.User, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+userSelectCols+` `+userSelectFrom+`
+		WHERE r.role_name = $1 AND u.department = $2 ORDER BY u.display_name ASC`, roleName, department)
 	if err != nil {
 		return nil, err
 	}

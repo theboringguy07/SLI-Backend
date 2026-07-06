@@ -18,15 +18,17 @@ func TestInternshipServiceEnrollAssignAndApprove(t *testing.T) {
 	ctx := context.Background()
 	studentID := uuid.New()
 	facultyID := uuid.New()
+	coordinatorID := uuid.New()
 	internships := newFakeInternshipRepo()
 	assignments := newFakeAssignmentRepo()
 	users := &fakeUserRepo{users: map[uuid.UUID]*domain.User{
-		studentID: {ID: studentID, Email: "student@somaiya.edu", Role: domain.Role{Name: domain.RoleStudent}},
-		facultyID: {ID: facultyID, Email: "faculty@somaiya.edu", Role: domain.Role{Name: domain.RoleFaculty}},
+		studentID:     {ID: studentID, Email: "student@somaiya.edu", Department: "Computer Engineering", Role: domain.Role{Name: domain.RoleStudent}},
+		facultyID:     {ID: facultyID, Email: "faculty@somaiya.edu", Department: "Computer Engineering", Role: domain.Role{Name: domain.RoleFaculty}},
+		coordinatorID: {ID: coordinatorID, Email: "coordinator@somaiya.edu", Department: "Computer Engineering", Role: domain.Role{Name: domain.RoleCoordinator}},
 	}}
 	svc := NewInternshipService(internships, assignments, users)
 
-	internship, err := svc.EnrollStudent(ctx, facultyID, EnrollStudentRequest{
+	internship, err := svc.EnrollStudent(ctx, coordinatorID, EnrollStudentRequest{
 		StudentID:           studentID,
 		CompanyName:         "Acme",
 		RoleTitle:           "SDE Intern",
@@ -43,7 +45,12 @@ func TestInternshipServiceEnrollAssignAndApprove(t *testing.T) {
 		t.Fatalf("expected active internship, got %s", internship.Status)
 	}
 
-	assignment, err := svc.AssignFacultyMentor(ctx, internship.ID, facultyID)
+	// The fake repo doesn't replicate the real pgx repo's student join
+	// (scanInternship) - do it manually so AssignFacultyMentor's department
+	// check has something to compare against.
+	internships.byID[internship.ID].Student = users.users[studentID]
+
+	assignment, err := svc.AssignFacultyMentor(ctx, coordinatorID, internship.ID, facultyID)
 	if err != nil {
 		t.Fatalf("AssignFacultyMentor returned error: %v", err)
 	}
@@ -57,6 +64,61 @@ func TestInternshipServiceEnrollAssignAndApprove(t *testing.T) {
 	if assignments.assignments[assignment.ID].Status != domain.AssignmentApproved {
 		t.Fatal("expected assignment to be approved")
 	}
+}
+
+func TestInternshipServiceRejectsCrossDepartmentEnrollmentAndAssignment(t *testing.T) {
+	ctx := context.Background()
+	studentID := uuid.New()
+	facultyID := uuid.New()
+	coordinatorID := uuid.New()
+	adminID := uuid.New()
+	internships := newFakeInternshipRepo()
+	assignments := newFakeAssignmentRepo()
+	users := &fakeUserRepo{users: map[uuid.UUID]*domain.User{
+		studentID:     {ID: studentID, Email: "student@somaiya.edu", Department: "Electronics Engineering", Role: domain.Role{Name: domain.RoleStudent}},
+		facultyID:     {ID: facultyID, Email: "faculty@somaiya.edu", Department: "Electronics Engineering", Role: domain.Role{Name: domain.RoleFaculty}},
+		coordinatorID: {ID: coordinatorID, Email: "coordinator@somaiya.edu", Department: "Computer Engineering", Role: domain.Role{Name: domain.RoleCoordinator}},
+		adminID:       {ID: adminID, Email: "admin@somaiya.edu", Role: domain.Role{Name: domain.RoleAdmin}},
+	}}
+	svc := NewInternshipService(internships, assignments, users)
+
+	// A coordinator from a different department than the student must be rejected.
+	_, err := svc.EnrollStudent(ctx, coordinatorID, EnrollStudentRequest{
+		StudentID:           studentID,
+		CompanyName:         "Acme",
+		RoleTitle:           "SDE Intern",
+		IndustryMentorName:  "Jane Mentor",
+		IndustryMentorEmail: "mentor@example.com",
+		AcademicYear:        "2026-2027",
+		StartDate:           "2026-06-25",
+		EndDate:             "2026-10-25",
+	})
+	assertAppCode(t, err, apperrors.CodeForbidden)
+
+	// ADMIN bypasses the department restriction entirely.
+	internship, err := svc.EnrollStudent(ctx, adminID, EnrollStudentRequest{
+		StudentID:           studentID,
+		CompanyName:         "Acme",
+		RoleTitle:           "SDE Intern",
+		IndustryMentorName:  "Jane Mentor",
+		IndustryMentorEmail: "mentor@example.com",
+		AcademicYear:        "2026-2027",
+		StartDate:           "2026-06-25",
+		EndDate:             "2026-10-25",
+	})
+	if err != nil {
+		t.Fatalf("admin EnrollStudent returned error: %v", err)
+	}
+	internships.byID[internship.ID].Student = users.users[studentID]
+
+	// Same-department coordinator, but faculty is in a different department.
+	otherCoordinatorID := uuid.New()
+	users.users[otherCoordinatorID] = &domain.User{ID: otherCoordinatorID, Email: "coord2@somaiya.edu", Department: "Electronics Engineering", Role: domain.Role{Name: domain.RoleCoordinator}}
+	otherFacultyID := uuid.New()
+	users.users[otherFacultyID] = &domain.User{ID: otherFacultyID, Email: "faculty2@somaiya.edu", Department: "Computer Engineering", Role: domain.Role{Name: domain.RoleFaculty}}
+
+	_, err = svc.AssignFacultyMentor(ctx, otherCoordinatorID, internship.ID, otherFacultyID)
+	assertAppCode(t, err, apperrors.CodeForbidden)
 }
 
 func TestInternshipServiceRejectsInvalidEnrollment(t *testing.T) {
@@ -76,6 +138,42 @@ func TestInternshipServiceRejectsInvalidEnrollment(t *testing.T) {
 		AcademicYear:        "2026-2027",
 	})
 	assertAppCode(t, err, apperrors.CodeValidationFailed)
+}
+
+func TestListInternshipsForUserScopesByDepartment(t *testing.T) {
+	ctx := context.Background()
+	coordinatorID := uuid.New()
+	adminID := uuid.New()
+	csStudentID := uuid.New()
+	eceStudentID := uuid.New()
+	internships := newFakeInternshipRepo()
+	assignments := newFakeAssignmentRepo()
+	users := &fakeUserRepo{users: map[uuid.UUID]*domain.User{
+		coordinatorID: {ID: coordinatorID, Department: "Computer Engineering", Role: domain.Role{Name: domain.RoleCoordinator}},
+		adminID:       {ID: adminID, Role: domain.Role{Name: domain.RoleAdmin}},
+	}}
+	svc := NewInternshipService(internships, assignments, users)
+
+	csInternship := &domain.Internship{ID: uuid.New(), StudentID: csStudentID, Student: &domain.User{ID: csStudentID, Department: "Computer Engineering"}}
+	eceInternship := &domain.Internship{ID: uuid.New(), StudentID: eceStudentID, Student: &domain.User{ID: eceStudentID, Department: "Electronics Engineering"}}
+	internships.byID[csInternship.ID] = csInternship
+	internships.byID[eceInternship.ID] = eceInternship
+
+	coordinatorView, count, err := svc.ListInternshipsForUser(ctx, coordinatorID, 0, 50)
+	if err != nil {
+		t.Fatalf("ListInternshipsForUser (coordinator) returned error: %v", err)
+	}
+	if count != 1 || len(coordinatorView) != 1 || coordinatorView[0].ID != csInternship.ID {
+		t.Fatalf("expected coordinator to see only their department's internship, got %#v", coordinatorView)
+	}
+
+	adminView, count, err := svc.ListInternshipsForUser(ctx, adminID, 0, 50)
+	if err != nil {
+		t.Fatalf("ListInternshipsForUser (admin) returned error: %v", err)
+	}
+	if count != 2 || len(adminView) != 2 {
+		t.Fatalf("expected admin to see every internship, got %#v", adminView)
+	}
 }
 
 func TestReportServiceSubmitEditAndNotifications(t *testing.T) {
@@ -370,6 +468,15 @@ func (r *fakeUserRepo) ListByRole(ctx context.Context, roleName domain.RoleName)
 	}
 	return users, nil
 }
+func (r *fakeUserRepo) ListByRoleAndDepartment(ctx context.Context, roleName domain.RoleName, department string) ([]domain.User, error) {
+	var users []domain.User
+	for _, user := range r.users {
+		if user.Role.Name == roleName && user.Department == department {
+			users = append(users, *user)
+		}
+	}
+	return users, nil
+}
 func (r *fakeUserRepo) UpdateProfileFields(ctx context.Context, userID uuid.UUID, updates map[string]interface{}) error {
 	user, ok := r.users[userID]
 	if !ok {
@@ -417,6 +524,15 @@ func (r *fakeInternshipRepo) ListAll(ctx context.Context, offset, limit int) ([]
 	internships := make([]domain.Internship, 0, len(r.byID))
 	for _, internship := range r.byID {
 		internships = append(internships, *internship)
+	}
+	return internships, int64(len(internships)), nil
+}
+func (r *fakeInternshipRepo) ListAllByDepartment(ctx context.Context, department string, offset, limit int) ([]domain.Internship, int64, error) {
+	internships := make([]domain.Internship, 0, len(r.byID))
+	for _, internship := range r.byID {
+		if internship.Student != nil && internship.Student.Department == department {
+			internships = append(internships, *internship)
+		}
 	}
 	return internships, int64(len(internships)), nil
 }
@@ -515,6 +631,15 @@ func (r *fakeReportRepo) ListByInternship(ctx context.Context, internshipID uuid
 }
 func (r *fakeReportRepo) RunInTransaction(ctx context.Context, fn func(txRepo repositories.ReportRepository) error) error {
 	return fn(r)
+}
+func (r *fakeReportRepo) ListAllByDepartment(ctx context.Context, department string, offset, limit int) ([]domain.WeeklyReport, int64, error) {
+	var reports []domain.WeeklyReport
+	for _, report := range r.reports {
+		if report.Internship != nil && report.Internship.Student != nil && report.Internship.Student.Department == department {
+			reports = append(reports, *report)
+		}
+	}
+	return reports, int64(len(reports)), nil
 }
 
 func key(internshipID uuid.UUID, reportType domain.ReportType, period int) string {

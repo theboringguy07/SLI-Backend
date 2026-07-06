@@ -20,6 +20,10 @@ type InternshipRepository interface {
 	FindByStudentID(ctx context.Context, studentID uuid.UUID) (*domain.Internship, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Internship, error)
 	ListAll(ctx context.Context, offset, limit int) ([]domain.Internship, int64, error)
+	// ListAllByDepartment is the department-scoped equivalent of ListAll -
+	// a coordinator should only see internships belonging to students in
+	// their own department (see InternshipService.ListInternshipsForUser).
+	ListAllByDepartment(ctx context.Context, department string, offset, limit int) ([]domain.Internship, int64, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.InternshipStatus) error
 }
 
@@ -114,6 +118,32 @@ func (r *internshipRepository) ListAll(ctx context.Context, offset, limit int) (
 
 	rows, err := r.db.Query(ctx, `SELECT `+internshipSelectCols+` `+internshipSelectFrom+`
 		ORDER BY i.created_at DESC OFFSET $1 LIMIT $2`, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	internships := []domain.Internship{}
+	for rows.Next() {
+		internship, err := scanInternship(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		internships = append(internships, *internship)
+	}
+	return internships, count, rows.Err()
+}
+
+func (r *internshipRepository) ListAllByDepartment(ctx context.Context, department string, offset, limit int) ([]domain.Internship, int64, error) {
+	var count int64
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM internships i JOIN users s ON s.id = i.student_id
+		WHERE s.department = $1`, department).Scan(&count); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx, `SELECT `+internshipSelectCols+` `+internshipSelectFrom+`
+		WHERE s.department = $1 ORDER BY i.created_at DESC OFFSET $2 LIMIT $3`, department, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
