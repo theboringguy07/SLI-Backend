@@ -131,6 +131,8 @@ func (h *EvaluationHandler) SubmitScores(w http.ResponseWriter, r *http.Request)
 // - a read-only view of the schedule and (if submitted) the locked score,
 // for the evaluation review UI. Reuses evalService.GetEvaluationDetail.
 func (h *EvaluationHandler) GetEvaluation(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value(middleware.UserClaimsKey).(*auth.JWTClaims)
+
 	internshipIDStr := chi.URLParam(r, "internshipID")
 	internshipID, err := uuid.Parse(internshipIDStr)
 	if err != nil {
@@ -140,6 +142,11 @@ func (h *EvaluationHandler) GetEvaluation(w http.ResponseWriter, r *http.Request
 
 	examType, err := parseExamType(r.URL.Query().Get("exam_type"))
 	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+
+	if err := h.evalService.EnsureCanViewInternship(r.Context(), claims.UserID, claims.Role, internshipID); err != nil {
 		response.Error(w, r, err)
 		return
 	}
@@ -154,6 +161,8 @@ func (h *EvaluationHandler) GetEvaluation(w http.ResponseWriter, r *http.Request
 }
 
 func (h *EvaluationHandler) DownloadMarksheet(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value(middleware.UserClaimsKey).(*auth.JWTClaims)
+
 	internshipIDStr := chi.URLParam(r, "internshipID")
 	internshipID, err := uuid.Parse(internshipIDStr)
 	if err != nil {
@@ -163,6 +172,11 @@ func (h *EvaluationHandler) DownloadMarksheet(w http.ResponseWriter, r *http.Req
 
 	examType, err := parseExamType(r.URL.Query().Get("exam_type"))
 	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+
+	if err := h.evalService.EnsureCanViewInternship(r.Context(), claims.UserID, claims.Role, internshipID); err != nil {
 		response.Error(w, r, err)
 		return
 	}

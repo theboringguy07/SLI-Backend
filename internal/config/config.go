@@ -145,9 +145,15 @@ func (c *Config) validateProduction() []string {
 	return problems
 }
 
+// getEnv trims surrounding whitespace - a stray leading/trailing space pasted
+// into a dashboard env var field (Render, Netlify, etc.) is an easy mistake
+// to make and otherwise breaks URL values in confusing ways: an untrimmed
+// FRONTEND_URL missing its scheme entirely turns a redirect like
+// frontendURL+"/dashboard" into a relative path, which the browser then
+// resolves against whatever page it was on instead of erroring outright.
 func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
-		return value
+		return strings.TrimSpace(value)
 	}
 	return fallback
 }

@@ -18,6 +18,10 @@ type EvaluationRepository interface {
 	GetSchedule(ctx context.Context, internshipID uuid.UUID, examType domain.ExamType) (*domain.EvaluationSchedule, error)
 	SubmitScores(ctx context.Context, score *domain.EvaluationScore) error
 	GetScore(ctx context.Context, internshipID uuid.UUID, examType domain.ExamType) (*domain.EvaluationScore, error)
+	// UpdateScore overwrites the mark columns of an existing score row (used
+	// by admin corrections - the original values are preserved separately in
+	// evaluation_corrections).
+	UpdateScore(ctx context.Context, score *domain.EvaluationScore) error
 	CreateCorrection(ctx context.Context, correction *domain.EvaluationCorrection) error
 	RunInTransaction(ctx context.Context, fn func(txRepo EvaluationRepository) error) error
 }
@@ -87,6 +91,24 @@ func (r *evaluationRepository) GetScore(ctx context.Context, internshipID uuid.U
 		return nil, err
 	}
 	return &s, nil
+}
+
+func (r *evaluationRepository) UpdateScore(ctx context.Context, score *domain.EvaluationScore) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE evaluation_scores SET
+			report_quality = $1, oral_presentation = $2, work_quality = $3,
+			understanding = $4, periodic_interaction = $5, remarks = $6
+		WHERE id = $7`,
+		score.ReportQuality, score.OralPresentation, score.WorkQuality,
+		score.Understanding, score.PeriodicInteraction, score.Remarks, score.ID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEvaluationNotFound
+	}
+	return nil
 }
 
 func (r *evaluationRepository) CreateCorrection(ctx context.Context, correction *domain.EvaluationCorrection) error {

@@ -17,6 +17,11 @@ type EvaluationService interface {
 	GetEvaluationForInternship(ctx context.Context, internshipID uuid.UUID, examType domain.ExamType) (*domain.EvaluationScore, error)
 	GetEvaluationDetail(ctx context.Context, internshipID uuid.UUID, examType domain.ExamType) (*EvaluationDetail, error)
 	CorrectMarks(ctx context.Context, adminID uuid.UUID, adminName string, internshipID uuid.UUID, examType domain.ExamType, newScore *domain.EvaluationScore, reason string) error
+	// EnsureCanViewInternship authorizes read access to an internship's
+	// evaluation data (detail view, marksheet download): admins always may,
+	// faculty only when they are the assigned mentor. Prevents any faculty
+	// member from reading arbitrary internships' scores by guessing IDs.
+	EnsureCanViewInternship(ctx context.Context, userID uuid.UUID, role domain.RoleName, internshipID uuid.UUID) error
 }
 
 // EvaluationDetail is the read-model for viewing an internship's evaluation
@@ -128,6 +133,20 @@ func (s *evaluationService) SubmitMarks(ctx context.Context, facultyID uuid.UUID
 	return nil
 }
 
+func (s *evaluationService) EnsureCanViewInternship(ctx context.Context, userID uuid.UUID, role domain.RoleName, internshipID uuid.UUID) error {
+	if role == domain.RoleAdmin {
+		return nil
+	}
+	assignment, err := s.assignmentRepo.FindByInternshipID(ctx, internshipID)
+	if err != nil {
+		return errors.New(errors.CodeNotFound, "internship assignment not found")
+	}
+	if assignment.FacultyMentorID != userID {
+		return errors.New(errors.CodeForbidden, "you are not the assigned mentor for this internship")
+	}
+	return nil
+}
+
 func (s *evaluationService) GetEvaluationForInternship(ctx context.Context, internshipID uuid.UUID, examType domain.ExamType) (*domain.EvaluationScore, error) {
 	score, err := s.evalRepo.GetScore(ctx, internshipID, examType)
 	if err != nil {
@@ -188,7 +207,16 @@ func (s *evaluationService) CorrectMarks(ctx context.Context, adminID uuid.UUID,
 		CorrectedAt:       time.Now(),
 	}
 
-	err = s.evalRepo.CreateCorrection(ctx, correction)
+	// Apply the corrected values to the live score row and record the
+	// correction atomically - the old values survive in the correction's
+	// OldScoresJSON, but everything that reads evaluation_scores (evaluation
+	// detail view, marksheet generation) must see the corrected marks.
+	err = s.evalRepo.RunInTransaction(ctx, func(txRepo repositories.EvaluationRepository) error {
+		if err := txRepo.UpdateScore(ctx, &correctedScore); err != nil {
+			return err
+		}
+		return txRepo.CreateCorrection(ctx, correction)
+	})
 	if err != nil {
 		return errors.NewWithErr(errors.CodeInternalServer, "failed to save correction", err)
 	}
@@ -207,6 +235,14 @@ func (s *evaluationService) CorrectMarks(ctx context.Context, adminID uuid.UUID,
 		CreatedAt:    time.Now(),
 	}
 	_ = s.auditRepo.Create(ctx, auditLog)
+
+	// Regenerate the marksheet PDF so the downloadable document reflects the
+	// corrected marks (same file key, so the old PDF is overwritten).
+	if s.marksheetService != nil {
+		if err := s.marksheetService.GenerateMarksheet(ctx, internshipID, examType); err != nil {
+			return errors.NewWithErr(errors.CodeInternalServer, "failed to regenerate marksheet", err)
+		}
+	}
 
 	return nil
 }

@@ -377,16 +377,28 @@ func TestEvaluationServiceScheduleMarksAndCorrection(t *testing.T) {
 	err := svc.SubmitMarks(ctx, facultyID, &domain.EvaluationScore{InternshipID: internshipID})
 	assertAppCode(t, err, apperrors.CodeReportAlreadyLocked)
 
-	originalQuality := evals.scores[internshipID].ReportQuality
 	if err := svc.CorrectMarks(ctx, adminID, "Admin", internshipID, domain.ExamTypeISE, &domain.EvaluationScore{ReportQuality: 20, Remarks: "corrected"}, "reason"); err != nil {
 		t.Fatalf("CorrectMarks returned error: %v", err)
 	}
-	if evals.scores[internshipID].ReportQuality != originalQuality {
-		t.Fatal("correction must not mutate locked original score")
+	// The live score row must reflect the corrected marks (the original
+	// values are preserved in the correction's OldScoresJSON).
+	if evals.scores[internshipID].ReportQuality != 20 || evals.scores[internshipID].Remarks != "corrected" {
+		t.Fatalf("correction must apply the new score, got quality=%d remarks=%q",
+			evals.scores[internshipID].ReportQuality, evals.scores[internshipID].Remarks)
 	}
 	if len(evals.corrections) != 1 || len(audit.logs) != 2 {
 		t.Fatalf("expected correction and audit log, corrections=%d audit=%d", len(evals.corrections), len(audit.logs))
 	}
+
+	// Faculty view authorization: assigned mentor and admin may view, any
+	// other faculty may not.
+	if err := svc.EnsureCanViewInternship(ctx, facultyID, domain.RoleFaculty, internshipID); err != nil {
+		t.Fatalf("assigned mentor should be allowed to view: %v", err)
+	}
+	if err := svc.EnsureCanViewInternship(ctx, adminID, domain.RoleAdmin, internshipID); err != nil {
+		t.Fatalf("admin should be allowed to view: %v", err)
+	}
+	assertAppCode(t, svc.EnsureCanViewInternship(ctx, uuid.New(), domain.RoleFaculty, internshipID), apperrors.CodeForbidden)
 }
 
 func assertAppCode(t *testing.T, err error, code apperrors.ErrorCode) {
@@ -797,6 +809,16 @@ func (r *fakeEvaluationRepo) GetScore(ctx context.Context, internshipID uuid.UUI
 		return nil, repositories.ErrEvaluationNotFound
 	}
 	return score, nil
+}
+func (r *fakeEvaluationRepo) UpdateScore(ctx context.Context, score *domain.EvaluationScore) error {
+	for internshipID, existing := range r.scores {
+		if existing.ID == score.ID {
+			updated := *score
+			r.scores[internshipID] = &updated
+			return nil
+		}
+	}
+	return repositories.ErrEvaluationNotFound
 }
 func (r *fakeEvaluationRepo) CreateCorrection(ctx context.Context, correction *domain.EvaluationCorrection) error {
 	if correction.ID == uuid.Nil {
